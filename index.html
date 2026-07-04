@@ -94,15 +94,12 @@
 
 <div class="card">
   <div id="preState">
-    <h1>Check In</h1>
-    <p class="sub">Tap the button below. This will record only the current time and your location — nothing else.</p>
-    <button id="checkinBtn" onclick="doCheckIn()">Check In Now</button>
+    <button id="checkinBtn" onclick="doCheckIn()">Check In</button>
   </div>
 
   <div id="postState" style="display:none;">
     <div class="checkmark" id="resultIcon">✓</div>
     <h1 id="resultTitle">Checked In</h1>
-    <p class="sub" id="resultSub">Thanks — you're all set.</p>
   </div>
 
   <div class="status" id="statusMsg"></div>
@@ -124,7 +121,6 @@ function showResult(success, title, sub) {
   document.getElementById('resultIcon').textContent = success ? '✓' : '✕';
   document.getElementById('resultIcon').style.color = success ? '#16a34a' : '#dc2626';
   document.getElementById('resultTitle').textContent = title;
-  document.getElementById('resultSub').textContent = sub;
 }
 
 function doCheckIn() {
