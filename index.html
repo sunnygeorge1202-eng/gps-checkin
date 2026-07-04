@@ -6,8 +6,6 @@
 <title>Check In</title>
 <style>
   :root {
-    --bg: #0f172a;
-    --card: #ffffff;
     --accent: #2563eb;
     --accent-dark: #1d4ed8;
     --success: #16a34a;
@@ -27,7 +25,7 @@
     padding: 20px;
   }
   .card {
-    background: var(--card);
+    background: #ffffff;
     border-radius: 16px;
     padding: 40px 32px;
     max-width: 380px;
@@ -39,12 +37,6 @@
     font-size: 1.4rem;
     margin: 0 0 8px;
     color: var(--text);
-  }
-  p.sub {
-    color: var(--muted);
-    font-size: 0.92rem;
-    margin: 0 0 28px;
-    line-height: 1.4;
   }
   button#checkinBtn {
     background: var(--accent);
@@ -69,7 +61,6 @@
     min-height: 20px;
     color: var(--muted);
   }
-  .status.success { color: var(--success); font-weight: 600; }
   .status.error { color: var(--error); font-weight: 600; }
   .spinner {
     display: inline-block;
@@ -106,8 +97,16 @@
 </div>
 
 <script>
-// ⚠️ REPLACE THIS with your Google Apps Script Web App URL (see setup instructions)
-const ENDPOINT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+// ⚠️ REPLACE THIS with your Google Apps Script Web App URL
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbyi8RRUcpII0JnittyYHNcgK5SAYxyIQNurfOIcWo0Di6Ivjoya3lUcziDABw1A9GK9/exec";
+const STORAGE_KEY = "checkin_done_v1";
+
+// Lock the page immediately if this device has already checked in
+window.addEventListener('DOMContentLoaded', function () {
+  if (localStorage.getItem(STORAGE_KEY)) {
+    showResult(true, 'Already Checked In');
+  }
+});
 
 function setStatus(html, cls) {
   const el = document.getElementById('statusMsg');
@@ -115,7 +114,7 @@ function setStatus(html, cls) {
   el.className = 'status' + (cls ? ' ' + cls : '');
 }
 
-function showResult(success, title, sub) {
+function showResult(success, title) {
   document.getElementById('preState').style.display = 'none';
   document.getElementById('postState').style.display = 'block';
   document.getElementById('resultIcon').textContent = success ? '✓' : '✕';
@@ -123,66 +122,79 @@ function showResult(success, title, sub) {
   document.getElementById('resultTitle').textContent = title;
 }
 
+function resetToButton() {
+  document.getElementById('checkinBtn').disabled = false;
+  document.getElementById('preState').style.display = 'block';
+  document.getElementById('postState').style.display = 'none';
+}
+
 function doCheckIn() {
+  if (localStorage.getItem(STORAGE_KEY)) {
+    showResult(true, 'Already Checked In');
+    return;
+  }
+
   const btn = document.getElementById('checkinBtn');
   btn.disabled = true;
   setStatus('<span class="spinner"></span>Getting your location…');
 
+  // Always fetch approximate IP-based location alongside GPS
+  const ipLocationPromise = fetch('https://ipapi.co/json/')
+    .then(function (res) { return res.json(); })
+    .catch(function () { return null; });
+
   if (!navigator.geolocation) {
-    setStatus('Location is not supported on this device/browser.', 'error');
-    btn.disabled = false;
+    ipLocationPromise.then(function (ipData) {
+      submitData({
+        gps_latitude: '',
+        gps_longitude: '',
+        gps_accuracy_meters: '',
+        ip_latitude: ipData ? (ipData.latitude || '') : '',
+        ip_longitude: ipData ? (ipData.longitude || '') : '',
+        ip_city: ipData ? (ipData.city || '') : ''
+      });
+    });
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
     function (position) {
-      const payload = {
-        timestamp: new Date().toISOString(),
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy_meters: position.coords.accuracy
-      };
-      submitData(payload);
+      ipLocationPromise.then(function (ipData) {
+        submitData({
+          gps_latitude: position.coords.latitude,
+          gps_longitude: position.coords.longitude,
+          gps_accuracy_meters: position.coords.accuracy,
+          ip_latitude: ipData ? (ipData.latitude || '') : '',
+          ip_longitude: ipData ? (ipData.longitude || '') : '',
+          ip_city: ipData ? (ipData.city || '') : ''
+        });
+      });
     },
     function (err) {
-      if (err.code === err.PERMISSION_DENIED) {
-        setStatus('<span class="spinner"></span>Using approximate location…');
-        fallbackToIpLocation();
-      } else {
-        let msg = err.code === err.TIMEOUT
-          ? 'Location request timed out. Please try again.'
-          : 'Could not get your location.';
-        setStatus(msg, 'error');
-        btn.disabled = false;
-      }
+      // GPS denied/unavailable — fall back to IP-only
+      ipLocationPromise.then(function (ipData) {
+        if (!ipData) {
+          setStatus('Could not get your location. Please allow location access and try again.', 'error');
+          resetToButton();
+          return;
+        }
+        submitData({
+          gps_latitude: '',
+          gps_longitude: '',
+          gps_accuracy_meters: '',
+          ip_latitude: ipData.latitude || '',
+          ip_longitude: ipData.longitude || '',
+          ip_city: ipData.city || ''
+        });
+      });
     },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
 
-function fallbackToIpLocation() {
-  fetch('https://ipapi.co/json/')
-    .then(function (res) { return res.json(); })
-    .then(function (data) {
-      const payload = {
-        timestamp: new Date().toISOString(),
-        latitude: data.latitude || '',
-        longitude: data.longitude || '',
-        accuracy_meters: 'IP-based (approximate)'
-      };
-      submitData(payload);
-    })
-    .catch(function () {
-      setStatus('');
-      showResult(false, 'Could Not Locate', 'Please allow location access, or check your connection.');
-      document.getElementById('checkinBtn').disabled = false;
-      document.getElementById('preState').style.display = 'block';
-      document.getElementById('postState').style.display = 'none';
-    });
-}
-
 function submitData(payload) {
   setStatus('<span class="spinner"></span>Submitting…');
+  payload.timestamp = new Date().toISOString();
 
   fetch(ENDPOINT_URL, {
     method: 'POST',
@@ -190,16 +202,14 @@ function submitData(payload) {
     body: JSON.stringify(payload)
   })
   .then(function () {
-    // Apps Script web apps often respond opaquely; treat send as success
+    localStorage.setItem(STORAGE_KEY, '1');
     setStatus('');
-    showResult(true, 'Checked In', 'Recorded at ' + new Date().toLocaleTimeString());
+    showResult(true, 'Checked In');
   })
-  .catch(function (error) {
+  .catch(function () {
     setStatus('');
-    showResult(false, 'Submission Failed', 'Please check your connection and try again.');
-    document.getElementById('checkinBtn').disabled = false;
-    document.getElementById('preState').style.display = 'block';
-    document.getElementById('postState').style.display = 'none';
+    showResult(false, 'Submission Failed');
+    resetToButton();
   });
 }
 </script>
