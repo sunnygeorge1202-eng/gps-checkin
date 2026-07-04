@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Check-In Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #map {
+    position: absolute;
+    top: 56px;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+  #topbar {
+    height: 56px;
+    background: #0f172a;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+  }
+  #topbar h1 {
+    font-size: 1rem;
+    margin: 0;
+    font-weight: 600;
+  }
+  #topbar .count {
+    font-size: 0.85rem;
+    color: #94a3b8;
+  }
+  #status {
+    position: absolute;
+    top: 66px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 0.85rem;
+    color: #1e293b;
+    z-index: 1000;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Check-In Map</h1>
+  <span class="count" id="countLabel"></span>
+</div>
+<div id="map"></div>
+<div id="status">Loading check-ins…</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Same Apps Script Web App URL as the check-in page
+const ENDPOINT_URL = "https://script.google.com/macros/s/AKfycbxcAVME5QcCW6n-1aDbxFLpWN1tbkLxB-y9YXU1UejWP51Su-kxaf_KGS4FBUY9xiLzTg/exec";
+
+const map = L.map('map').setView([20.5937, 78.9629], 5); // default: India
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19
+}).addTo(map);
+
+function setStatus(text) {
+  const el = document.getElementById('status');
+  if (!text) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = text;
+}
+
+fetch(ENDPOINT_URL)
+  .then(function (res) { return res.json(); })
+  .then(function (data) {
+    if (data.status !== 'ok') {
+      setStatus('Could not load data: ' + (data.message || 'unknown error'));
+      return;
+    }
+
+    const records = data.records || [];
+    document.getElementById('countLabel').textContent = records.length + ' check-in' + (records.length === 1 ? '' : 's');
+
+    const bounds = [];
+
+    records.forEach(function (r) {
+      const hasGps = r.gps_latitude !== '' && r.gps_longitude !== '' && r.gps_latitude != null;
+      const lat = hasGps ? r.gps_latitude : r.ip_latitude;
+      const lng = hasGps ? r.gps_longitude : r.ip_longitude;
+
+      if (lat === '' || lng === '' || lat == null || lng == null) return;
+
+      const color = hasGps ? '#2563eb' : '#f59e0b';
+      const marker = L.circleMarker([lat, lng], {
+        radius: 8,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.7,
+        weight: 2
+      }).addTo(map);
+
+      const popupHtml =
+        '<b>' + (hasGps ? 'GPS location' : 'Approx. location (IP)') + '</b><br>' +
+        'Time: ' + new Date(r.timestamp).toLocaleString() + '<br>' +
+        'Lat/Lng: ' + Number(lat).toFixed(5) + ', ' + Number(lng).toFixed(5) +
+        (hasGps && r.gps_accuracy_meters ? '<br>Accuracy: ±' + Math.round(r.gps_accuracy_meters) + ' m' : '') +
+        (r.ip_city ? '<br>IP city: ' + r.ip_city : '');
+
+      marker.bindPopup(popupHtml);
+      bounds.push([lat, lng]);
+    });
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    } else {
+      setStatus('No check-ins recorded yet.');
+      return;
+    }
+
+    setStatus(null);
+  })
+  .catch(function () {
+    setStatus('Could not reach the data source.');
+  });
+</script>
+
+</body>
+</html>
