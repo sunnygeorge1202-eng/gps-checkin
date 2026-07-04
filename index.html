@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Check In</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #ffffff;
+    --accent: #2563eb;
+    --accent-dark: #1d4ed8;
+    --success: #16a34a;
+    --error: #dc2626;
+    --text: #1e293b;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 20px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 40px 32px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 8px;
+    color: var(--text);
+  }
+  p.sub {
+    color: var(--muted);
+    font-size: 0.92rem;
+    margin: 0 0 28px;
+    line-height: 1.4;
+  }
+  button#checkinBtn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 16px 32px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.2s ease;
+  }
+  button#checkinBtn:hover { background: var(--accent-dark); }
+  button#checkinBtn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+  }
+  .status {
+    margin-top: 22px;
+    font-size: 0.9rem;
+    min-height: 20px;
+    color: var(--muted);
+  }
+  .status.success { color: var(--success); font-weight: 600; }
+  .status.error { color: var(--error); font-weight: 600; }
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(37,99,235,0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .checkmark {
+    font-size: 2.4rem;
+    color: var(--success);
+    margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div id="preState">
+    <h1>Check In</h1>
+    <p class="sub">Tap the button below. This will record only the current time and your location — nothing else.</p>
+    <button id="checkinBtn" onclick="doCheckIn()">Check In Now</button>
+  </div>
+
+  <div id="postState" style="display:none;">
+    <div class="checkmark" id="resultIcon">✓</div>
+    <h1 id="resultTitle">Checked In</h1>
+    <p class="sub" id="resultSub">Thanks — you're all set.</p>
+  </div>
+
+  <div class="status" id="statusMsg"></div>
+</div>
+
+<script>
+// ⚠️ REPLACE THIS with your Google Apps Script Web App URL (see setup instructions)
+const ENDPOINT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+function setStatus(html, cls) {
+  const el = document.getElementById('statusMsg');
+  el.innerHTML = html;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+function showResult(success, title, sub) {
+  document.getElementById('preState').style.display = 'none';
+  document.getElementById('postState').style.display = 'block';
+  document.getElementById('resultIcon').textContent = success ? '✓' : '✕';
+  document.getElementById('resultIcon').style.color = success ? '#16a34a' : '#dc2626';
+  document.getElementById('resultTitle').textContent = title;
+  document.getElementById('resultSub').textContent = sub;
+}
+
+function doCheckIn() {
+  const btn = document.getElementById('checkinBtn');
+  btn.disabled = true;
+  setStatus('<span class="spinner"></span>Getting your location…');
+
+  if (!navigator.geolocation) {
+    setStatus('Location is not supported on this device/browser.', 'error');
+    btn.disabled = false;
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    function (position) {
+      const payload = {
+        timestamp: new Date().toISOString(),
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy_meters: position.coords.accuracy
+      };
+      submitData(payload);
+    },
+    function (err) {
+      if (err.code === err.PERMISSION_DENIED) {
+        setStatus('<span class="spinner"></span>Using approximate location…');
+        fallbackToIpLocation();
+      } else {
+        let msg = err.code === err.TIMEOUT
+          ? 'Location request timed out. Please try again.'
+          : 'Could not get your location.';
+        setStatus(msg, 'error');
+        btn.disabled = false;
+      }
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function fallbackToIpLocation() {
+  fetch('https://ipapi.co/json/')
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      const payload = {
+        timestamp: new Date().toISOString(),
+        latitude: data.latitude || '',
+        longitude: data.longitude || '',
+        accuracy_meters: 'IP-based (approximate)'
+      };
+      submitData(payload);
+    })
+    .catch(function () {
+      setStatus('');
+      showResult(false, 'Could Not Locate', 'Please allow location access, or check your connection.');
+      document.getElementById('checkinBtn').disabled = false;
+      document.getElementById('preState').style.display = 'block';
+      document.getElementById('postState').style.display = 'none';
+    });
+}
+
+function submitData(payload) {
+  setStatus('<span class="spinner"></span>Submitting…');
+
+  fetch(ENDPOINT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight for Apps Script
+    body: JSON.stringify(payload)
+  })
+  .then(function () {
+    // Apps Script web apps often respond opaquely; treat send as success
+    setStatus('');
+    showResult(true, 'Checked In', 'Recorded at ' + new Date().toLocaleTimeString());
+  })
+  .catch(function (error) {
+    setStatus('');
+    showResult(false, 'Submission Failed', 'Please check your connection and try again.');
+    document.getElementById('checkinBtn').disabled = false;
+    document.getElementById('preState').style.display = 'block';
+    document.getElementById('postState').style.display = 'none';
+  });
+}
+</script>
+
+</body>
+</html>
